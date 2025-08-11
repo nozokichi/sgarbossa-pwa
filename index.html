@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Sgarbossa 基準 電卓</title>
+  <meta name="theme-color" content="#0f172a">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <style>
+    :root{
+      --bg:#0b1220; --card:#0f172a; --muted:#94a3b8; --text:#e5e7eb; --accent:#22c55e; --warn:#ef4444; --border:#1f2937;
+      --btn:#111827; --btn2:#1f2937;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial; background:var(--bg); color:var(--text);} 
+    header{position:sticky;top:0;backdrop-filter:saturate(1.2) blur(8px);background:rgba(11,18,32,.8);z-index:10;border-bottom:1px solid var(--border)}
+    .wrap{max-width:900px;margin:0 auto;padding:12px}
+    h1{font-size:20px;margin:6px 0 2px}
+    .sub{color:var(--muted);font-size:12px;margin-bottom:8px}
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:12px;margin:12px 0;box-shadow:0 6px 20px rgba(0,0,0,.25)}
+    .grid{display:grid;gap:8px}
+    .grid-cols{grid-template-columns:1fr 1fr}
+    @media(min-width:680px){.grid-cols{grid-template-columns:1.2fr .8fr .8fr .8fr .8fr}}
+    .row{display:grid;grid-template-columns:1.1fr .9fr 1fr 1fr .9fr;gap:6px;align-items:center}
+    .head{font-size:12px;color:var(--muted);margin:4px 0 8px}
+    .lead{font-weight:600}
+    select,input{width:100%;padding:10px;border-radius:12px;border:1px solid var(--border);background:#0b1324;color:var(--text);font-size:16px}
+    input[type=number]{appearance:textfield}
+    input::-webkit-outer-spin-button,input::-webkit-inner-spin-button{appearance:none;margin:0}
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;border:1px solid var(--border);background:#0b1324}
+    .btn{display:inline-flex;justify-content:center;align-items:center;gap:8px;padding:12px 14px;border-radius:14px;border:1px solid var(--border);background:var(--btn);color:var(--text);font-weight:600}
+    .btn:active{transform:translateY(1px)}
+    .result{display:flex;flex-wrap:wrap;gap:8px}
+    .badge{padding:8px 12px;border-radius:999px;font-weight:700}
+    .ok{background:rgba(34,197,94,.2);border:1px solid rgba(34,197,94,.45)}
+    .ng{background:rgba(239,68,68,.2);border:1px solid rgba(239,68,68,.5)}
+    .muted{color:var(--muted)}
+    .footer{font-size:12px;color:var(--muted)}
+    .danger{background:rgba(239,68,68,.12);border:1px dashed rgba(239,68,68,.55);padding:10px;border-radius:12px}
+    .topbar{display:flex;gap:8px;align-items:center;justify-content:space-between}
+    .vsep{height:1px;background:var(--border);margin:10px 0}
+    .table{display:grid;gap:6px}
+    .table .row{background:#0b1324;border:1px solid var(--border);padding:8px;border-radius:12px}
+    .sticky-cta{position:sticky;bottom:0;z-index:10;background:linear-gradient(180deg, rgba(11,18,32,0), rgba(11,18,32,1) 35%);padding-top:8px}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap topbar">
+      <div>
+        <h1>Sgarbossa 基準</h1>
+        <div class="sub">LBBB / ペースメーカー心電図でのAMI判定支援（スマホ最適化）</div>
+      </div>
+      <button id="install" class="btn" hidden>ホーム画面に追加</button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="card">
+      <div class="danger">※ 本ツールは医療判断の補助です。臨床所見・トロポニン・画像と併用してください。単位は <b>mm</b> で入力してください。</div>
+      <div class="vsep"></div>
+      <div class="head">入力：各誘導の QRS極性（+ = R優位 / − = S or QS優位）、J点でのST偏位（mm, 上向き＋ / 下向き−）、S波の深さ（mm, なければ0）</div>
+      <div id="table" class="table"></div>
+      <div class="sticky-cta">
+        <div class="card">
+          <div class="result" id="result">
+            <span class="pill">原法スコア合計：<b id="score">0</b> 点（<span id="orig">陰性</span>）</span>
+            <span class="pill">改変（Smith 比）：<b id="modi">陰性</b></span>
+          </div>
+          <div class="vsep"></div>
+          <div id="flags" class="head"></div>
+          <div class="vsep"></div>
+          <div class="result">
+            <span id="urgent" class="badge ng" hidden>陽性：AMI の可能性高 → 直ちに循環器へ連絡・評価継続</span>
+            <span id="ok" class="badge ok" hidden>陰性：臨床所見と併せて経過観察/追加検査を検討</span>
+          </div>
+          <div class="vsep"></div>
+          <button class="btn" id="reset">入力をクリア</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="card footer">
+      <div>ルール概要：</div>
+      <ul>
+        <li>原法：<b>同方向ST上昇 ≥1mm</b>（5点）／<b>V1–V3のST低下 ≤−1mm</b>（3点）／<b>逆方向の過剰ST上昇 ≥5mm</b>（2点）。合計<b>≥3点で陽性</b>。</li>
+        <li>改変（Smith）：上記の①②に加え、<b>|ST|/|S| ≥ 0.25 かつ ST≥+1mm</b>が1誘導でもあれば陽性。</li>
+      </ul>
+    </section>
+  </main>
+
+  <script>
+    // ===================== UI: 12-lead grid =====================
+    const leads = ["I","II","III","aVR","aVL","aVF","V1","V2","V3","V4","V5","V6"];
+    const table = document.getElementById('table');
+    const state = {};
+
+    function leadRow(name){
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `
+        <div class="lead">${name}</div>
+        <select aria-label="${name} QRS極性" data-k="qrs">
+          <option value="1">＋（R優位）</option>
+          <option value="-1">−（S/QS優位）</option>
+        </select>
+        <input type="number" step="0.5" inputmode="decimal" placeholder="ST(mm)" aria-label="${name} ST" data-k="st">
+        <input type="number" step="0.5" inputmode="decimal" placeholder="S波(mm)" aria-label="${name} S波" data-k="s">
+        <input type="text" aria-label="${name} 比率" data-k="ratio" disabled placeholder="比">
+      `;
+      table.appendChild(row);
+
+      state[name] = { qrs: 1, st: 0, s: 0, ratio: '' };
+      row.querySelectorAll('select,input').forEach(el=>{
+        el.addEventListener('input', ()=>{
+          const k = el.dataset.k;
+          let v = el.value;
+          if(k!== 'ratio'){
+            v = Number(v || 0);
+          }
+          if(k==='qrs') v = Number(v);
+          state[name][k] = v;
+          recalc();
+        });
+      });
+      return row;
+    }
+
+    function init(){
+      // Header row
+      const head = document.createElement('div');
+      head.className = 'row head';
+      head.innerHTML = '<div>誘導</div><div>QRS極性</div><div>ST_J(mm)</div><div>S深さ(mm)</div><div>ST/|S|</div>';
+      table.appendChild(head);
+      leads.forEach(leadRow);
+      document.getElementById('reset').addEventListener('click', ()=>{
+        Object.keys(state).forEach(k=> state[k] = { qrs:1, st:0, s:0, ratio:''});
+        const inputs = table.querySelectorAll('select,input');
+        inputs.forEach(el=>{
+          if(el.tagName==='SELECT') el.value='1';
+          else if(el.dataset.k==='ratio') el.value='';
+          else el.value='';
+        });
+        recalc();
+      });
+      recalc();
+    }
+
+    // ===================== Logic: Sgarbossa rules =====================
+    function recalc(){
+      let score = 0;
+      let smithPositive = false;
+      const flags = [];
+
+      leads.forEach(L=>{
+        const {qrs, st, s} = state[L];
+        // ratio
+        let ratio = '';
+        if (s !== 0) {
+          ratio = (Math.abs(st) / Math.abs(s));
+        }
+        state[L].ratio = ratio === '' ? '' : ratio.toFixed(2);
+        // update visible ratio
+        const rows = table.querySelectorAll('.row');
+        const rowIdx = leads.indexOf(L) + 1; // +1 for header
+        rows[rowIdx].querySelector('input[data-k="ratio"]').value = state[L].ratio;
+
+        // Original Sgarbossa scoring
+        const concordantSTE = (qrs === 1 && st >= 1);
+        const concordantSTD_V1_3 = (["V1","V2","V3"].includes(L) && st <= -1);
+        const discordantSTE = (qrs === -1 && st >= 5);
+
+        if (concordantSTE) { score += 5; flags.push(`${L}: 同方向STE ≥1mm（+5）`); }
+        if (concordantSTD_V1_3) { score += 3; flags.push(`${L}: V1–V3のSTD ≤−1mm（+3）`); }
+        if (discordantSTE) { score += 2; flags.push(`${L}: 逆方向の過剰STE ≥5mm（+2）`); }
+
+        // Modified Smith
+        const smithRatioPositive = (s !== 0 && (Math.abs(st)/Math.abs(s)) >= 0.25 && st >= 1);
+        if (concordantSTE || concordantSTD_V1_3 || smithRatioPositive) {
+          smithPositive = true;
+        }
+      });
+
+      // Update UI
+      document.getElementById('score').textContent = score;
+      const origPos = score >= 3;
+      document.getElementById('orig').textContent = origPos ? '陽性' : '陰性';
+      document.getElementById('modi').textContent = smithPositive ? '陽性' : '陰性';
+      document.getElementById('flags').textContent = flags.length ? ('根拠：' + flags.join(' / ')) : '根拠：—';
+      document.getElementById('urgent').hidden = !(origPos || smithPositive);
+      document.getElementById('ok').hidden = (origPos || smithPositive);
+    }
+
+    // ===================== PWA install prompt =====================
+    let deferredPrompt;
+    const installBtn = document.getElementById('install');
+    window.addEventListener('beforeinstallprompt', (e)=>{
+      e.preventDefault();
+      deferredPrompt = e; installBtn.hidden=false; 
+    });
+    installBtn?.addEventListener('click', async ()=>{
+      if(!deferredPrompt) return; 
+      deferredPrompt.prompt();
+      await deferredPrompt.userChoice; 
+      deferredPrompt = null; installBtn.hidden=true; 
+    });
+
+    // ===================== Service Worker =====================
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', ()=>{
+        navigator.serviceWorker.register('./sw.js');
+      });
+    }
+
+    init();
+  </script>
+</body>
+</html>
